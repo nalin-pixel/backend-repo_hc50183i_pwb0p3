@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
@@ -43,8 +43,7 @@ class UserCreate(BaseModel):
     password: str
 
 class LoginIn(BaseModel):
-    email: Optional[EmailStr] = None
-    username: Optional[str] = None
+    email: EmailStr
     password: str
 
 class UserOut(BaseModel):
@@ -114,7 +113,7 @@ def test():
 # Auth
 @app.post("/auth/register", response_model=Token)
 def register(data: UserCreate):
-    if get_user_by_email(str(data.email)):
+    if get_user_by_email(data.email):
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed = pwd_context.hash(data.password)
     user_doc = {"email": str(data.email), "password": hashed, "created_at": datetime.now(timezone.utc)}
@@ -124,28 +123,9 @@ def register(data: UserCreate):
     return Token(access_token=access)
 
 @app.post("/auth/login", response_model=Token)
-async def login(request: Request):
-    email = None
-    password = None
-
-    ctype = request.headers.get("content-type", "")
-    try:
-        if ctype.startswith("application/json"):
-            data = await request.json()
-            email = data.get("email") or data.get("username")
-            password = data.get("password")
-        else:
-            form = await request.form()
-            email = form.get("email") or form.get("username")
-            password = form.get("password")
-    except Exception:
-        pass
-
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="Missing credentials")
-
-    user = get_user_by_email(str(email))
-    if not user or not pwd_context.verify(password, user.get("password")):
+def login(payload: LoginIn):
+    user = get_user_by_email(str(payload.email))
+    if not user or not pwd_context.verify(payload.password, user.get("password")):
         raise HTTPException(status_code=400, detail="Invalid credentials")
     access = create_access_token({"sub": str(user["_id"])})
     return Token(access_token=access)
@@ -268,8 +248,7 @@ def search(q: str):
 # Simple image upload endpoint (stores base64 via multipart for demo)
 @app.post("/admin/upload")
 def upload_image(file: UploadFile = File(...), user=Depends(require_admin)):
-    # Placeholder processing; integrate with cloud storage in production
-    _ = file.file.read()
+    content = file.file.read()  # Placeholder to mimic processing
     return {"url": f"/uploads/{file.filename}"}
 
 if __name__ == "__main__":
